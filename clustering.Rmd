@@ -1,0 +1,212 @@
+---
+title: "clustering"
+author: "Nikhil Sharma"
+date: "5/23/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(randomForest)
+library(magrittr)
+library(rlist)
+library(readr)
+setwd("~/Documents/bsa_research/")
+data <- read_csv("clean_nba_data.csv")
+#View(data)
+colnames(data)[53] <- "Season"
+```
+
+```{r}
+data <- data[,-c(1,2,7,8,31,32,33,45:52)]
+```
+
+
+```{r}
+years <- list() ##empty list
+a <- 1
+
+for (i in 1980:2019){
+  df <- filter(data, Season == i) ##filter dataset by season
+  years[[a]] <- df ##put each individual dataframe in list
+  a <- a + 1
+}
+
+##we now have a list where each component is a df of stats for a single season
+```
+
+```{r}
+evals_greater_than_1 <- vector() ##empty vector
+
+a <- 1
+
+for (i in years){ ##look at all dfs
+  x <- length(which(eigen(cor(i[,5:37]))$values > 1)) ##do eigendecomoposition, find the number of e'vals greater than 1
+  evals_greater_than_1[a] <- x ##store in vector
+  a <- a+1
+}
+
+evals_greater_than_1
+```
+
+```{r}
+mean(evals_greater_than_1) ##6.6
+median(evals_greater_than_1) ##7
+
+##thus, we will choose the first 7 principal components when we do pca
+```
+
+```{r}
+pca_function <- function(df){
+  pca <- prcomp(df[,5:37], center = TRUE,scale. = TRUE) ##grab numeric values in dfs
+  all_components_matrix <- pca[["x"]] ##grab pc matrix
+  data_for_clusters <- cbind.data.frame(df$Player, df$Season, df$Tm, all_components_matrix[,1:7]) ##cbind player, season, team, first 7 components
+  return (data_for_clusters)
+}
+
+kmeans_function <- function(df, df2){
+  clusters <- kmeans(df[,4:10], 5, nstart=25) ##kmeans
+  full_data <- cbind.data.frame(df2, clusters$cluster) ##cbind data with clusters
+  centroid <- data.frame(clusters$centers)
+  colnames(full_data)[39] <- "Cluster" ##fix name
+  return (c(full_data, centroid))
+}
+```
+
+```{r}
+set.seed(123)
+
+clustered_data <- list()
+centroids <- list()
+
+a <- 1
+
+for (i in years){ ##loop through each season df
+  pcomp <- pca_function(i) ##pca
+  clusters <- kmeans_function(pcomp, i) ##kmeans
+  
+  data_with_clusters <- data.frame(list.cbind(clusters))
+  data_with_clusters <- data_with_clusters[,-(40:46)]
+  clustered_data[[a]] <- data_with_clusters
+  
+  centroids_per_season <- cbind.data.frame(clusters$PC1,clusters$PC2,clusters$PC3,clusters$PC4,clusters$PC5,clusters$PC6,clusters$PC7)
+  centroids[[a]] <- centroids_per_season
+  
+  
+  a <- a + 1
+}
+```
+
+
+
+
+```{r}
+important_features_function <- function(df){
+  df[,c(5:37, 39)] <- df[,c(5:37, 39)] %<>% mutate_if(is.factor,as.character)
+  df[,c(5:37, 39)] <- df[,c(5:37, 39)] %<>% mutate_if(is.character,as.numeric)
+  forest_data <- df[,c(5:37, 39)]
+  return(forest_data)
+}
+
+filter_clusters_function <- function(forest_data, i){
+  forest_data$Cluster <- ifelse(forest_data$Cluster == i, 1, 0)
+  forest_data$Cluster <- as.factor(forest_data$Cluster)
+  forest.cluster <- randomForest(Cluster ~., data=forest_data, type="classification")
+  var <- data.frame(importance(forest.cluster))
+  var$Stat <- rownames(var)
+  var <- arrange(var, desc(MeanDecreaseGini))
+  return (var)
+}
+```
+
+```{r}
+set.seed(123)
+
+important_variables <- list()
+
+a <- 1
+
+for (i in clustered_data){ ##loop through each season df
+  forest_data <- important_features_function(i) 
+  
+  for (j in 1:5){
+    variables <- filter_clusters_function(forest_data, j)
+    important_variables[[a]] <- variables
+    #print(j)
+    a <- a + 1}
+}
+```
+
+```{r}
+seq <- 1980:2019
+proper_vec <- list()
+a <- 1
+for (i in seq){
+  yrs <- rep(i,5)
+  proper_vec[[a]] <- yrs
+  a <- a+1
+}
+proper_vec <- unlist(proper_vec)
+```
+
+```{r}
+centroids_df <- (bind_rows(centroids))
+centroids_df
+```
+
+```{r}
+important_variables2 <- important_variables
+
+for (j in 1:200){
+  test <- data.frame(t(important_variables2[[j]]))
+  test <- test[-1,]
+  important_variables2[[j]] <- test
+}
+
+#View(important_variables2)
+```
+
+```{r}
+vars_df <- bind_rows(important_variables2)
+```
+
+```{r}
+proper_vec_2 <- rep(1:5, 40)
+```
+
+
+```{r}
+centroids_with_variables <- cbind.data.frame(proper_vec_2, centroids_df, vars_df, proper_vec)
+```
+
+```{r}
+centroids_with_variables <- centroids_with_variables[,-c(19:41)]
+```
+
+```{r}
+head(centroids_with_variables)
+```
+
+
+
+```{r}
+colnames(centroids_with_variables) <- c("Cluster", "PC1", "PC2", "PC3", "PC4", "PC5", "PC6", "PC7", "Var1", "Var2", "Var3", "Var4", "Var5", "Var6", "Var7", "Var8", "Var9", "Var10", "Season")
+```
+
+```{r}
+save(centroids_with_variables, file="centroids_with_variables.Rdata")
+```
+
+
+```{r}
+dist(centroids_with_variables[,2:8])
+```
+
+```{r}
+plot(centroids_with_variables$PC1, centroids_with_variables$PC2, col = centroids_with_variables$Cluster)
+```
+
