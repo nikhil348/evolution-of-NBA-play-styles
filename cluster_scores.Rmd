@@ -1,0 +1,95 @@
+---
+title: "cluster score"
+author: "Christopher Robles"
+date: "5/23/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{R}
+
+
+library(tidyverse)
+library(readr)
+
+setwd("~/projects/nba")
+
+#read in data, and remove unneeded stat columns
+data <- read_csv("clean_nba_data.csv")
+#View(data)
+colnames(data)[53] <- "Season"
+data <- data[,-c(1,2,7,8,31,32,33,45:52)]
+
+#split players into decades
+eighties <- data %>% dplyr::filter(Season < 1990)
+nineties <- data %>% dplyr::filter(Season > 1989 & Season < 2000)
+twothousands <- data %>% dplyr::filter(Season > 1999 & Season < 2011)
+tens <- data %>% dplyr::filter(Season > 2009)
+#load in decades
+load("~/Downloads/clusters1980s.RData")
+load("~/Downloads/clusters1990s.RData")
+load("~/Downloads/clusters2000s.RData")
+load("~/Downloads/clusters2010s.RData")
+
+
+full_80s <- cbind.data.frame(eighties, clusters_80s$cluster)
+colnames(full_80s)[39] <- "Cluster"
+full_90s <- cbind.data.frame(nineties, clusters_90s$cluster)
+colnames(full_90s)[39] <- "Cluster"
+full_00s <- cbind.data.frame(twothousands, clusters_00s$cluster)
+colnames(full_00s)[39] <- "Cluster"
+full_10s <- cbind.data.frame(tens, clusters_10s$cluster)
+colnames(full_10s)[39] <- "Cluster"
+
+##This function takes in two consecative years of data and gives a score based on how many players changed clusters.
+
+cluster_scoring<-function(df1, df2){
+  df1$PlayerTm<-paste(df1$Player, df1$Tm, sep=".")
+  df2$PlayerTm<-paste(df2$Player, df2$Tm, sep=".")
+  df3<-inner_join(df1, df2, by= "PlayerTm")
+  df4<-select(df3, PlayerTm, Cluster.x, Cluster.y)
+  df4<-select(df3, PlayerTm, Cluster.x, Cluster.y)
+  df4$score<-0
+  df4[which(df4$Cluster.x!=df4$Cluster.y),]$score=1
+  return(sum(df4$score))
+  
+}
+
+##
+for (year in 1980:1989){
+  df1<-full_80s[which(full_80s$Season==year),]
+  df2<-full_80s[which(full_80s$Season==(year+1)),]
+  score=cluster_scoring(df1,df2)
+  cat(year, score, "\n")
+}
+##make another column name and team
+
+
+##checking out the decades
+
+for (year in 1990:1998){
+  df1<-full_90s[which(full_90s$Season==year),]
+  df2<-full_90s[which(full_90s$Season==(year+1)),]
+  score=cluster_scoring(df1,df2)
+  cat(year, score, "\n")
+}
+
+for (year in 2000:2008){
+  df1<-full_00s[which(full_00s$Season==year),]
+  df2<-full_00s[which(full_00s$Season==(year+1)),]
+  score=cluster_scoring(df1,df2)
+  cat(year, score, "\n")
+}
+
+for (year in 2010:2018){
+  df1<-full_10s[which(full_10s$Season==year),]
+  df2<-full_10s[which(full_10s$Season==(year+1)),]
+  score=cluster_scoring(df1,df2)
+  cat(year, score, "\n")
+}
+
+pc1, pc2, pc3  <-function(df1)
+```
